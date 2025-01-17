@@ -919,20 +919,107 @@ def now() -> datetime:
 def patched(id: str) -> bool:
     """Patch a workflow.
 
-    When called, this will only return true if code should take the newer path
-    which means this is either not replaying or is replaying and has seen this
-    patch before.
+    Is the main technique for Workflow Versioning.
+
+    Has different behavior if Replaying or not Replaying:
+
+    If not Replaying: returns true and writes a marker to the Event
+    History recording the patch id.
+
+    If Replaying: if Replay arrives at a call to patched, it will
+    check the Event History. If the next Event in the History is
+    a Marker with an ID that matches this call to patch, then it returns
+    True. If the next Event in the History is not a marker with
+    the same ID, then it returns False.
+
+    This means that the newest code should always be at the top
+    of if-else blocks because if not, non-replaying code will hit
+    that first and write that to the event history, and any subsequent
+    replays of that execution will run older code (that was at the top
+    of the if-else block at the time of the original execution).
 
     Use :py:func:`deprecate_patch` when all workflows are done and will never be
     queried again. The old code path can be used at that time too.
+
+    Example:
+        >>> if patched('v3'):
+        ...     '''
+        ...     This is the newest version of the code.
+        ...
+        ...     The above patched statement following will do
+        ...     one of the following three things:
+        ...
+        ...     1. If the execution is not Replaying, it will evaluate
+        ...        to True and write a Marker Event to the history
+        ...        with a patch id v3. This code block will run.
+        ...     2. If the execution is Replaying, and the original
+        ...        run put a Patch ID v3 at this location in the event
+        ...        history, it will evaluate to True, and this code block
+        ...        will run.
+        ...     3. If the execution is Replaying, and the original
+        ...        run has a Patch ID other than v3 at this location in the event
+        ...        history, it will evaluate to False, and this code block won't
+        ...        run.
+        ...     '''
+        ... elif patched('v2'):
+        ...     '''
+        ...     This is the second version of the code.
+        ...
+        ...     The above patched statement following will do
+        ...     one of the following three things:
+        ...
+        ...     1. If the execution is not Replaying, the execution
+        ...        won't get here because the first patched statement
+        ...        will be True.
+        ...     2. If the execution is Replaying, and the original
+        ...        run put a Patch ID v2 marker at this location in the event
+        ...        history, it will evaluate to True, and this code block
+        ...        will run.
+        ...     3. If the execution is Replaying, and the original
+        ...        run has a Patch ID other than v2 at this location in the event
+        ...        history, or doesn't have a patch marker at this location in the event
+        ...        history, it will evaluate to False, and this code block won't
+        ...        run.
+        ...     '''
+        ... else:
+        ...     '''
+        ...     This is the original version of the code.
+        ...
+        ...     The above patched statement following will do
+        ...     one of the following three things:
+        ...
+        ...     1. If the execution is not Replaying, the execution
+        ...        won't get here because the first patched statement
+        ...        will be True.
+        ...     2. If the execution is Replaying, and the original
+        ...        run had a patch marker v3 or v2 at this location in the event
+        ...        history, the execution
+        ...        won't get here because the first or second patched statement
+        ...        will be True (respectively).
+        ...     3. If the execution is Replaying, and condition 2
+        ...        doesn't hold, then it will run this code.
+        ...     '''
+
+        And here is an anti-example of what not to do:
+
+        >>> if patched('v2'):
+        ...     '''
+        ...     This is bad because when not replaying,
+        ...     all patched statements evaluate to True (and put a marker
+        ...     in the event history), which means that new executions
+        ...     will use v2, and miss v3 below
+        ...     '''
+        ... elif patched('v3'):
+        ...     pass
+        ... else:
+        ...     pass
 
     Args:
         id: The identifier for this patch. This identifier may be used
             repeatedly in the same workflow to represent the same patch
 
     Returns:
-        True if this should take the newer path, false if it should take the
-        older path.
+        bool: Behaves as described above.
     """
     return _Runtime.current().workflow_patch(id, deprecated=False)
 
