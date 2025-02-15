@@ -459,6 +459,10 @@ class Client:
     ) -> WorkflowHandle[Any, Any]:
         """Start a workflow and return its handle.
 
+        Note that if the ``start_signal`` arg is supplied,
+        this behaves as a signal-with-start:
+        https://docs.temporal.io/develop/python/message-passing#signal-with-start.
+
         Args:
             workflow: String name or class method decorated with
                 ``@workflow.run`` for the workflow to start.
@@ -1923,6 +1927,11 @@ class WorkflowHandle(Generic[SelfType, ReturnType]):
             Handles created as a result of :py:meth:`Client.start_workflow` will
             query the latest workflow with the same workflow ID even if it is
             unrelated to the started workflow.
+
+        Example:
+            >>> client = await Client.connect("localhost:7233")
+            >>> handle = client.get_workflow_handle_for(MyWorkflow.run, "your-workflow-id")
+            >>> result = await handle.query(MyWorkflow.current_state_query)
 
         Args:
             query: Query function or name on the workflow.
