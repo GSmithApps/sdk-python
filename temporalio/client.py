@@ -505,7 +505,6 @@ class Client:
             request_eager_start: Potentially reduce the latency to start this workflow by
                 encouraging the server to start it on a local worker running with
                 this same client.
-                This is currently experimental.
 
         Returns:
             A workflow handle to the started workflow.
@@ -2186,9 +2185,6 @@ class WorkflowHandle(Generic[SelfType, ReturnType]):
         This will target the workflow with :py:attr:`run_id` if present. To use a
         different run ID, create a new handle with via :py:meth:`Client.get_workflow_handle`.
 
-        .. warning::
-           This API is experimental
-
         Args:
             update: Update function or name on the workflow.
             arg: Single argument to the update.
@@ -2293,9 +2289,6 @@ class WorkflowHandle(Generic[SelfType, ReturnType]):
         This will target the workflow with :py:attr:`run_id` if present. To use a
         different run ID, create a new handle with via :py:meth:`Client.get_workflow_handle`.
 
-        .. warning::
-           This API is experimental
-
         Args:
             update: Update function or name on the workflow. arg: Single argument to the
                 update.
@@ -2375,9 +2368,6 @@ class WorkflowHandle(Generic[SelfType, ReturnType]):
         Users may prefer the more typesafe :py:meth:`get_update_handle_for`
         which accepts an update definition.
 
-        .. warning::
-           This API is experimental
-
         Args:
             id: Update ID to get a handle to.
             workflow_run_id: Run ID to tie the handle to. If this is not set,
@@ -2406,9 +2396,6 @@ class WorkflowHandle(Generic[SelfType, ReturnType]):
         the update result.
 
         This is the same as :py:meth:`get_update_handle` but typed.
-
-        .. warning::
-           This API is experimental
 
         Args:
             update: The update method to use for typing the handle.
@@ -4068,6 +4055,7 @@ class ScheduleActionStartWorkflow(ScheduleAction):
             temporalio.converter.encode_search_attributes(
                 untyped_not_in_typed, action.start_workflow.search_attributes
             )
+        # TODO (dan): confirm whether this be `is not None`
         if self.typed_search_attributes:
             temporalio.converter.encode_search_attributes(
                 self.typed_search_attributes, action.start_workflow.search_attributes
@@ -4519,6 +4507,9 @@ class ScheduleUpdate:
 
     schedule: Schedule
     """Schedule to update."""
+
+    search_attributes: Optional[temporalio.common.TypedSearchAttributes] = None
+    """Search attributes to update."""
 
 
 @dataclass
@@ -6541,14 +6532,20 @@ class _ClientImpl(OutboundInterceptor):
         if not update:
             return
         assert isinstance(update, ScheduleUpdate)
+        request = temporalio.api.workflowservice.v1.UpdateScheduleRequest(
+            namespace=self._client.namespace,
+            schedule_id=input.id,
+            schedule=await update.schedule._to_proto(self._client),
+            identity=self._client.identity,
+            request_id=str(uuid.uuid4()),
+        )
+        if update.search_attributes is not None:
+            request.search_attributes.indexed_fields.clear()  # Ensure that we at least create an empty map
+            temporalio.converter.encode_search_attributes(
+                update.search_attributes, request.search_attributes
+            )
         await self._client.workflow_service.update_schedule(
-            temporalio.api.workflowservice.v1.UpdateScheduleRequest(
-                namespace=self._client.namespace,
-                schedule_id=input.id,
-                schedule=await update.schedule._to_proto(self._client),
-                identity=self._client.identity,
-                request_id=str(uuid.uuid4()),
-            ),
+            request,
             retry=True,
             metadata=input.rpc_metadata,
             timeout=input.rpc_timeout,

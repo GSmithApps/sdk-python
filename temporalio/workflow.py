@@ -626,6 +626,9 @@ class _Runtime(ABC):
     def workflow_info(self) -> Info: ...
 
     @abstractmethod
+    def workflow_instance(self) -> Any: ...
+
+    @abstractmethod
     def workflow_is_continue_as_new_suggested(self) -> bool: ...
 
     @abstractmethod
@@ -778,9 +781,6 @@ def current_update_info() -> Optional[UpdateInfo]:
     This is powered by :py:mod:`contextvars` so it is only valid within the
     update handler and coroutines/tasks it has started.
 
-    .. warning::
-       This API is experimental
-
     Returns:
         Info for the current update handler the code calling this is executing
             within if any.
@@ -819,6 +819,15 @@ def info() -> Info:
         Info for the currently running workflow.
     """
     return _Runtime.current().workflow_info()
+
+
+def instance() -> Any:
+    """Current workflow's instance.
+
+    Returns:
+        The currently running workflow instance.
+    """
+    return _Runtime.current().workflow_instance()
 
 
 def memo() -> Mapping[str, Any]:
@@ -1177,9 +1186,6 @@ def update(
     non-dynamic update methods is to only take a single object/dataclass
     argument that can accept more fields later if needed. The handler may return
     a serializable value which will be sent back to the caller of the update.
-
-    .. warning::
-       This API is experimental
 
     Args:
         fn: The function to decorate.
@@ -1598,6 +1604,13 @@ class _Definition:
                     issues.append(
                         f"Multiple update methods found for {defn_name} "
                         f"(at least on {name} and {updates[update_defn.name].fn.__name__})"
+                    )
+                elif update_defn.validator and not _parameters_identical_up_to_naming(
+                    update_defn.fn, update_defn.validator
+                ):
+                    issues.append(
+                        f"Update validator method {update_defn.validator.__name__} parameters "
+                        f"do not match update method {update_defn.fn.__name__} parameters"
                     )
                 else:
                     updates[update_defn.name] = update_defn
@@ -3052,9 +3065,6 @@ def start_local_activity(
     At least one of ``schedule_to_close_timeout`` or ``start_to_close_timeout``
     must be present.
 
-    .. warning::
-        Local activities are currently experimental.
-
     Args:
         activity: Activity name or function reference.
         arg: Single argument to the activity.
@@ -3223,9 +3233,6 @@ async def execute_local_activity(
     """Start a local activity and wait for completion.
 
     This is a shortcut for ``await`` :py:meth:`start_local_activity`.
-
-    .. warning::
-        Local activities are currently experimental.
     """
     # We call the runtime directly instead of top-level start_local_activity to
     # ensure we don't miss new parameters
@@ -3353,9 +3360,6 @@ def start_local_activity_class(
     """Start a local activity from a callable class.
 
     See :py:meth:`start_local_activity` for parameter and return details.
-
-    .. warning::
-        Local activities are currently experimental.
     """
     return _Runtime.current().workflow_start_local_activity(
         activity,
@@ -3481,9 +3485,6 @@ async def execute_local_activity_class(
     """Start a local activity from a callable class and wait for completion.
 
     This is a shortcut for ``await`` :py:meth:`start_local_activity_class`.
-
-    .. warning::
-        Local activities are currently experimental.
     """
     # We call the runtime directly instead of top-level start_local_activity to
     # ensure we don't miss new parameters
@@ -3611,9 +3612,6 @@ def start_local_activity_method(
     """Start a local activity from a method.
 
     See :py:meth:`start_local_activity` for parameter and return details.
-
-    .. warning::
-        Local activities are currently experimental.
     """
     return _Runtime.current().workflow_start_local_activity(
         activity,
@@ -3739,9 +3737,6 @@ async def execute_local_activity_method(
     """Start a local activity from a method and wait for completion.
 
     This is a shortcut for ``await`` :py:meth:`start_local_activity_method`.
-
-    .. warning::
-        Local activities are currently experimental.
     """
     # We call the runtime directly instead of top-level start_local_activity to
     # ensure we don't miss new parameters
