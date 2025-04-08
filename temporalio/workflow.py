@@ -928,9 +928,24 @@ def now() -> datetime:
 def patched(id: str) -> bool:
     """Patch a workflow.
 
-    When called, this will only return true if code should take the newer path
-    which means this is either not replaying or is replaying and has seen this
-    patch before.
+    Is the main technique for Workflow Versioning.
+
+    Has different behavior if Replaying or not Replaying:
+
+    If not Replaying: returns true and writes a marker to the Event
+    History recording the patch id.
+
+    If Replaying: if Replay arrives at a call to patched, it will
+    check the Event History. If the next Event in the History is
+    a Marker with an ID that matches this call to patch, then it returns
+    True. If the next Event in the History is not a marker with
+    the same ID, then it returns False.
+
+    This means that the newest code should always be at the top
+    of if-else blocks because if not, non-replaying code will hit
+    that first and write that to the event history, and any subsequent
+    replays of that execution will run older code (that was at the top
+    of the if-else block at the time of the original execution).
 
     Use :py:func:`deprecate_patch` when all workflows are done and will never be
     queried again. The old code path can be used at that time too.
